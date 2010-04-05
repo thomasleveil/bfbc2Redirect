@@ -22,7 +22,7 @@ Examples:
 """
 
 __author__ = "Thomas LEVEIL <thomasleveil@gmail.com>"
-__version__ = "1.0"
+__version__ = "1.1"
 
 import sys
 from socket import *
@@ -122,6 +122,15 @@ author : %s
 def usage():
     print __doc__
     
+
+def main_is_frozen():
+    """detect if the script is running from frozen
+    distribution. i.e: from a py2exe build or others
+    """
+    import imp
+    return (hasattr(sys, "frozen") or # new py2exe
+        hasattr(sys, "importers") or # old py2exe
+        imp.is_frozen("__main__")) # tools/freeze
     
 def main():
     from getopt import getopt, GetoptError
@@ -171,4 +180,16 @@ def main():
         pass
             
 if __name__ == "__main__":
-    main()
+    import traceback
+    try:
+        main()
+    except SystemExit:
+        pass
+    except KeyboardInterrupt:
+        pass
+    except:
+        traceback.print_exc()
+    if main_is_frozen():
+        raw_input('press the [Enter] key to exit')
+        
+    sys.exit( 0 )
