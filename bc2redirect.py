@@ -26,7 +26,7 @@ __version__ = "1.2"
 
 import sys
 from socket import *
-from threading import Thread, Lock
+from threading import Thread, Lock, Event
 import time
 from bfbc2.protocol import DecodePacket
 import bfbc2
@@ -44,6 +44,7 @@ class PipeThread( Thread ):
     pipes = []
     def __init__( self, name, printpacketLock, source, sink ):
         Thread.__init__( self )
+        self._stop_event = Event()
         self.name = name
         self.daemon = True
         self.printpacketLock = printpacketLock
@@ -57,7 +58,7 @@ class PipeThread( Thread ):
         log( '%s pipes active' % len( PipeThread.pipes ))
 
     def run( self ):
-        while 1:
+        while not self._stop_event.is_set():
             try:
                 data = self.source.recv( 1024 )
                 if not data: break
@@ -88,31 +89,50 @@ class PipeThread( Thread ):
             sys.stdout.flush()
         finally:
             self.printpacketLock.release()
+            
+    def stop(self):
+        self._stop_event.set()
         
         
 class Pinhole( Thread ):
     def __init__( self, port, newhost, newport ):
         Thread.__init__( self )
+        self._stop_event = Event()
         log( 'Redirecting: localhost:%s -> %s:%s' % ( port, newhost, newport ))
         self.newhost = newhost
         self.newport = newport
         self.sock = socket( AF_INET, SOCK_STREAM )
+        self.sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
         self.sock.bind(( '', port ))
         self.sock.listen(5)
         self.printpacketLock = Lock()
+        self.fwd_socket = None
+        self.rcv_thread = None
+        self.fwd_thread = None
     
     def run( self ):
         nb_connections = 0
-        while 1:
+        while not self._stop_event.is_set():
             newsock, address = self.sock.accept()
             nb_connections += 1
             log( 'Creating new session (c%s) for %s %s ' % ((nb_connections, ) + address) )
-            fwd = socket( AF_INET, SOCK_STREAM )
-            fwd.connect(( self.newhost, self.newport ))
-            PipeThread('BC2 <-c%s--- Client '%nb_connections, self.printpacketLock, newsock, fwd ).start()
-            PipeThread('BC2 ---c%s-> Client '%nb_connections, self.printpacketLock, fwd, newsock ).start()
+            self.fwd_socket = socket( AF_INET, SOCK_STREAM )
+            self.fwd_socket.connect(( self.newhost, self.newport ))
+            self.rcv_thread = PipeThread('BC2 <-c%s--- Client '%nb_connections, self.printpacketLock, newsock, self.fwd_socket )
+            self.rcv_thread.start()
+            self.fwd_thread = PipeThread('BC2 ---c%s-> Client '%nb_connections, self.printpacketLock, self.fwd_socket, newsock )
+            self.fwd_thread.start()
        
- 
+    def stop(self):
+        self._stop_event.set()
+        self.sock.close()
+        if self.fwd_socket:
+            self.fwd_socket.close()
+        if self.rcv_thread:
+            self.rcv_thread.stop()
+        if self.fwd_thread:
+            self.fwd_thread.stop()
+        
  
 def version():
     print """\
@@ -178,6 +198,7 @@ def main():
         while 1:
             time.sleep(1000)
     except KeyboardInterrupt:
+        mainthread.stop()
         print "bye"
         pass
             
