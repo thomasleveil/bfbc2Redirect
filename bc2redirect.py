@@ -22,7 +22,7 @@ Examples:
 """
 
 __author__ = "Thomas LEVEIL <thomasleveil@gmail.com>"
-__version__ = "1.1"
+__version__ = "1.2"
 
 import sys
 from socket import *
@@ -45,6 +45,7 @@ class PipeThread( Thread ):
     def __init__( self, name, printpacketLock, source, sink ):
         Thread.__init__( self )
         self.name = name
+        self.daemon = True
         self.printpacketLock = printpacketLock
         self.source = source
         self.sink = sink
@@ -169,6 +170,7 @@ def main():
 
     #sys.stdout = open( 'pinhole.log', 'w' )
     mainthread = Pinhole( port, newhost, newport )
+    mainthread.daemon = True
     mainthread.start()
     
     import time
